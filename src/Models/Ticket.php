@@ -7,7 +7,38 @@ use function App\db;
 class Ticket {
     public static function create(array $d): int { $s=db()->prepare('INSERT INTO tickets (title,description,priority,category,requester_id,assignee_id) VALUES (:title,:description,:priority,:category,:requester_id,:assignee_id)'); $s->execute([':title'=>$d['title'],':description'=>$d['description'],':priority'=>$d['priority'],':category'=>$d['category']?:null,':requester_id'=>$d['requester_id'],':assignee_id'=>$d['assignee_id']?:null]); return (int)db()->lastInsertId(); }
     public static function find(int $id): ?array { $s=db()->prepare('SELECT t.*, r.name requester_name, a.name assignee_name FROM tickets t LEFT JOIN users r ON r.id=t.requester_id LEFT JOIN users a ON a.id=t.assignee_id WHERE t.id=?'); $s->execute([$id]); $r=$s->fetch(); return $r?:null; }
-    public static function forUser(int $userId,string $role): array { if (in_array($role,['agent','admin'],true)){ $s=db()->query('SELECT * FROM tickets ORDER BY updated_at DESC'); return $s->fetchAll(); } $s=db()->prepare('SELECT * FROM tickets WHERE requester_id=? ORDER BY updated_at DESC'); $s->execute([$userId]); return $s->fetchAll(); }
+    public static function forUser(int $userId, string $role, array $filters = []): array {
+        $params = [];
+        $sql = 'SELECT t.*, r.name as requester_name, COALESCE(lc.last_comment_at, t.updated_at) as last_activity_at
+                FROM tickets t 
+                JOIN users r ON r.id = t.requester_id
+                LEFT JOIN (
+                    SELECT ticket_id, MAX(created_at) as last_comment_at 
+                    FROM ticket_comments 
+                    GROUP BY ticket_id
+                ) lc ON lc.ticket_id = t.id';
+         $where = [];
+ 
+         if (!in_array($role, ['agent', 'admin'], true)) {
+             $where[] = 't.requester_id = ?';
+             $params[] = $userId;
+         }
+ 
+         if (!empty($filters['search'])) {
+             $where[] = '(t.title LIKE ? OR t.id = ?)';
+             $params[] = '%' . $filters['search'] . '%';
+             $params[] = $filters['search'];
+         }
+         if (!empty($filters['status'])) { $where[] = 't.status = ?'; $params[] = $filters['status']; }
+         if (!empty($filters['priority'])) { $where[] = 't.priority = ?'; $params[] = $filters['priority']; }
+ 
+         if ($where) { $sql .= ' WHERE ' . implode(' AND ', $where); }
+        $sql .= ' ORDER BY last_activity_at DESC';
+ 
+         $s = db()->prepare($sql);
+         $s->execute($params);
+         return $s->fetchAll();
+     }
     public static function addComment(int $ticketId,int $userId,string $body): void { $s=db()->prepare('INSERT INTO ticket_comments (ticket_id,user_id,body) VALUES (?,?,?)'); $s->execute([$ticketId,$userId,$body]); }
     public static function comments(int $ticketId): array { $s=db()->prepare('SELECT c.*, u.name FROM ticket_comments c JOIN users u ON u.id=c.user_id WHERE c.ticket_id=? ORDER BY c.created_at ASC'); $s->execute([$ticketId]); return $s->fetchAll(); }
     public static function attachments(int $ticketId): array { $s=db()->prepare('SELECT * FROM ticket_attachments WHERE ticket_id=? ORDER BY created_at ASC'); $s->execute([$ticketId]); return $s->fetchAll(); }

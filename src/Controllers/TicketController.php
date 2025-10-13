@@ -6,15 +6,39 @@ use function App\{view,redirect,flash,auth_required,current_user,role_in,csrf_to
 use App\Models\{Ticket,User};
 
 class TicketController {
-    public function dashboard(): void { auth_required(); $u=current_user(); $tickets=Ticket::forUser((int)$u['id'],$u['role']); view('tickets/index.php',['title'=>'Dashboard','tickets'=>$tickets]); }
-    public function index(): void { $this->dashboard(); }
+    public function dashboard(): void { auth_required(); $u=current_user(); $filters = [ 'search' => $_GET['search'] ?? null, 'status' => $_GET['status'] ?? null, 'priority' => $_GET['priority'] ?? null, ]; $tickets=Ticket::forUser((int)$u['id'],$u['role'], $filters); view('tickets/index.php',['title'=>'Dashboard','tickets'=>$tickets, 'filters' => $filters]); }
+    public function index(): void {
+        $this->dashboard();
+    }
     public function create(): void { auth_required(); $agents=User::agents(); view('tickets/create.php',['title'=>'Create Ticket','agents'=>$agents]); }
     public function store(): void {
         auth_required(); $u=current_user();
         $title=trim($_POST['title']??''); $description=trim($_POST['description']??''); $priority=$_POST['priority']??'medium'; $category=trim($_POST['category']??''); $assignee_id=isset($_POST['assignee_id']) && $_POST['assignee_id']!=='' ? (int)$_POST['assignee_id'] : null;
         if($title===''||$description===''){ flash('danger','Title and description are required.'); redirect('/tickets/create'); }
-        $id=Ticket::create(['title'=>$title,'description'=>$description,'priority'=>$priority,'category'=>$category,'requester_id'=>(int)$u['id'],'assignee_id'=>$assignee_id]);
-        flash('success','Ticket created.'); redirect('/tickets/'.$id);
+        $ticketId=Ticket::create(['title'=>$title,'description'=>$description,'priority'=>$priority,'category'=>$category,'requester_id'=>(int)$u['id'],'assignee_id'=>$assignee_id]);
+
+        // Handle optional file upload
+        if (isset($_FILES['file']['name']) && is_array($_FILES['file']['name'])) {
+            $fileCount = count($_FILES['file']['name']);
+            for ($i = 0; $i < $fileCount; $i++) {
+                if ($_FILES['file']['error'][$i] === UPLOAD_ERR_OK) {
+                    $file = [
+                        'name' => $_FILES['file']['name'][$i],
+                        'tmp_name' => $_FILES['file']['tmp_name'][$i],
+                        'size' => $_FILES['file']['size'][$i],
+                    ];
+                    $max = (int)(getenv('MAX_UPLOAD_BYTES') ?: 5 * 1024 * 1024);
+                    if ($file['size'] > $max) { continue; } // Skip file if too large
+                    $finfo = new \finfo(FILEINFO_MIME_TYPE); $mime = $finfo->file($file['tmp_name']);
+                    $allowed = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'application/pdf' => 'pdf', 'text/plain' => 'txt'];
+                    if (!isset($allowed[$mime])) { continue; } // Skip if unsupported type
+                    $ext = $allowed[$mime]; $original = sanitize_filename($file['name']); $random = bin2hex(random_bytes(16)) . ".$ext"; $dest = upload_dir() . '/' . $random;
+                    if (move_uploaded_file($file['tmp_name'], $dest)) { Ticket::addAttachment($ticketId, (int)$u['id'], $random, $original, $mime, (int)$file['size']); }
+                }
+            }
+        }
+
+        flash('success','Ticket created successfully.'); redirect('/tickets/'.$ticketId);
     }
     public function show(int $id): void {
         auth_required(); $u=current_user(); $ticket=Ticket::find($id); if(!$ticket){ http_response_code(404); echo 'Not found'; return; }
@@ -33,10 +57,27 @@ class TicketController {
     public function attach(int $id): void {
         auth_required(); $u=current_user(); $ticket=Ticket::find($id); if(!$ticket){ http_response_code(404); echo 'Not found'; return; }
         if(!in_array($u['role'],['agent','admin'],true) && (int)$ticket['requester_id']!==(int)$u['id']){ http_response_code(403); echo 'Forbidden'; return; }
-        if(!isset($_FILES['file']) || $_FILES['file']['error']!==UPLOAD_ERR_OK){ flash('danger','No file uploaded or upload error.'); redirect('/tickets/'.$id); }
-        $file=$_FILES['file']; $max=(int)(getenv('MAX_UPLOAD_BYTES')?:5*1024*1024); if($file['size']>$max){ flash('danger','File too large.'); redirect('/tickets/'.$id); }
-        $finfo=new \finfo(FILEINFO_MIME_TYPE); $mime=$finfo->file($file['tmp_name']); $allowed=['image/png'=>'png','image/jpeg'=>'jpg','image/gif'=>'gif','application/pdf'=>'pdf','text/plain'=>'txt']; if(!isset($allowed[$mime])){ flash('danger','Unsupported file type.'); redirect('/tickets/'.$id); }
-        $ext=$allowed[$mime]; $original=sanitize_filename($file['name']); $random=bin2hex(random_bytes(16)).".$ext"; $destDir=upload_dir(); $dest=$destDir.'/'.$random; if(!move_uploaded_file($file['tmp_name'],$dest)){ flash('danger','Failed to save file.'); redirect('/tickets/'.$id); }
-        Ticket::addAttachment($id,(int)$u['id'],$random,$original,$mime,(int)$file['size']); flash('success','Attachment uploaded.'); redirect('/tickets/'.$id);
+        if (empty($_FILES['file']['name'][0])) { flash('danger', 'No files were selected.'); redirect('/tickets/'.$id); }
+
+        $fileCount = count($_FILES['file']['name']);
+        $uploadedCount = 0;
+        for ($i = 0; $i < $fileCount; $i++) {
+            if ($_FILES['file']['error'][$i] === UPLOAD_ERR_OK) {
+                $file = [
+                    'name' => $_FILES['file']['name'][$i],
+                    'tmp_name' => $_FILES['file']['tmp_name'][$i],
+                    'size' => $_FILES['file']['size'][$i],
+                ];
+                $max = (int)(getenv('MAX_UPLOAD_BYTES') ?: 5 * 1024 * 1024);
+                if ($file['size'] > $max) { continue; }
+                $finfo = new \finfo(FILEINFO_MIME_TYPE); $mime = $finfo->file($file['tmp_name']);
+                $allowed = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'application/pdf' => 'pdf', 'text/plain' => 'txt'];
+                if (!isset($allowed[$mime])) { continue; }
+                $ext = $allowed[$mime]; $original = sanitize_filename($file['name']); $random = bin2hex(random_bytes(16)) . ".$ext"; $dest = upload_dir() . '/' . $random;
+                if (move_uploaded_file($file['tmp_name'], $dest)) { Ticket::addAttachment($id, (int)$u['id'], $random, $original, $mime, (int)$file['size']); $uploadedCount++; }
+            }
+        }
+
+        flash('success', "$uploadedCount file(s) uploaded successfully."); redirect('/tickets/'.$id);
     }
 }
