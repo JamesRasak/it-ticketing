@@ -1,0 +1,71 @@
+---
+deployment:
+  tasks:
+    # 0) Notes:
+    # - cPanel checks out your repo to: /home/ticketing/repositories/it-ticketing
+    # - This YAML runs from the repository root ($PWD) during deployment.
+    # - Set DEPLOYPATH to your PUBLIC webroot (doc-root). Commonly:
+    #     /home/ticketing/public_html
+    #   Change it if your domain/subdomain uses another directory.
+
+    # 1) Set paths
+    - export REPOPATH="$PWD"
+    - export DEPLOYPATH="/home/ticketing/public_html"
+
+    # 2) Ensure deploy directory exists
+    - /bin/mkdir -p "$DEPLOYPATH"
+
+    # 3) Sync files from repo -> webroot (exclude VCS & non-web artifacts)
+    #    cPanel warns not to deploy .git; we exclude it explicitly.
+    - |
+      if command -v rsync >/dev/null 2>&1; then
+        rsync -az --delete \
+          --exclude=".git" \
+          --exclude=".github" \
+          --exclude=".cpanel" \
+          --exclude=".cpanel.yml" \
+          --exclude="node_modules" \
+          --exclude="tests" \
+          --exclude="docs" \
+          "$REPOPATH"/ "$DEPLOYPATH"/
+      else
+        echo "rsync not found; performing a conservative copy..."
+        /usr/bin/find "$REPOPATH" \
+          -path "$REPOPATH/.git" -prune -o \
+          -path "$REPOPATH/.github" -prune -o \
+          -name ".cpanel.yml" -prune -o \
+          -path "$REPOPATH/node_modules" -prune -o \
+          -type f -print0 \
+          | xargs -0 -I{} /bin/cp --parents -a "{}" "$DEPLOYPATH"/
+      fi
+
+    # 4) Composer install if composer.json exists (common for modern PHP apps)
+    - |
+      if [ -f "$DEPLOYPATH/composer.json" ]; then
+        echo "Installing Composer dependencies..."
+        COMPOSER_BIN="$(command -v composer || echo /opt/cpanel/composer/bin/composer)"
+        "$COMPOSER_BIN" --working-dir="$DEPLOYPATH" install \
+          --no-dev --prefer-dist --no-interaction --no-progress
+      fi
+
+    # 5) Preserve server-side .env (do NOT commit secrets to Git)
+    - |
+      if [ ! -f "$DEPLOYPATH/.env" ] && [ -f "$DEPLOYPATH/.env.example" ]; then
+        cp "$DEPLOYPATH/.env.example" "$DEPLOYPATH/.env"
+        echo "Created .env from example — update DB creds in cPanel."
+      fi
+
+    # 6) File/dir permissions (typical for shared hosting)
+    - /usr/bin/find "$DEPLOYPATH" -type d -exec chmod 755 {} \;
+    - /usr/bin/find "$DEPLOYPATH" -type f -exec chmod 644 {} \;
+
+    # 7) Optional: Run DB migrations via a custom PHP script if you provide one
+    #    e.g., create scripts/migrate.php to run idempotent SQL on MySQL.
+    - |
+      if [ -f "$DEPLOYPATH/scripts/migrate.php" ]; then
+        echo "Running DB migrations..."
+        /usr/bin/php "$DEPLOYPATH/scripts/migrate.php"
+      fi
+
+    # 8) Optional: Clear OPcache if available (safe no-op otherwise)
+    - /usr/bin/php -r "if (function_exists('opcache_reset')) { opcache_reset(); }"
