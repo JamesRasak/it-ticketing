@@ -57,8 +57,8 @@ Append to `C:\\xampp\\apache\\conf\\extra\\httpd-vhosts.conf`:
 ```
 <VirtualHost *:80>
     ServerName ticketing.local
-    DocumentRoot "C:/xampp/htdocs/it-ticketing-php/public"
-    <Directory "C:/xampp/htdocs/it-ticketing-php/public">
+    DocumentRoot "C:/xampp/htdocs/it-ticketing/public"
+    <Directory "C:/xampp/htdocs/it-ticketing/public">
         AllowOverride All
         Require all granted
     </Directory>

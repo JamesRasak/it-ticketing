@@ -1,7 +1,17 @@
-Options -Indexes
-RewriteEngine On
-## RewriteBase /it-ticketing/public
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ index.php [QSA,L]
-## RewriteRule ^ index.php [L]
+# Pretty URLs for front controller
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # If the requested resource exists as a file or directory, serve it
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Otherwise route everything to index.php (our router)
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Basic protection for sensitive files (defense in depth)
+<FilesMatch "^(\.env|composer\.json|composer\.lock|schema\.sql)$">
+    Require all denied
+</FilesMatch>
