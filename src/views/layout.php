@@ -37,9 +37,13 @@
         <?php
           $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
           $isAllTicketsActive = ($requestUri === '/' || (str_starts_with($requestUri, '/tickets') && !str_starts_with($requestUri, '/tickets/create')));
+          $isAdminActive = (str_starts_with($requestUri, '/admin'));
         ?>
         <li class="nav-item"><a class="nav-link <?= $isAllTicketsActive ? 'active' : '' ?>" href="/tickets">All Tickets</a></li>
         <li class="nav-item"><a class="nav-link <?= $_SERVER['REQUEST_URI'] === '/tickets/create' ? 'active' : '' ?>" href="/tickets/create">Create Ticket</a></li>
+        <?php if (!empty($_SESSION['user']) && $_SESSION['user']['role'] === 'admin'): ?>
+        <li class="nav-item"><a class="nav-link <?= $isAdminActive ? 'active' : '' ?>" href="/admin">Admin</a></li>
+        <?php endif; ?>
         <?php endif; ?>
       </ul>
       <ul class="navbar-nav ms-auto">

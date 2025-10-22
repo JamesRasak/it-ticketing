@@ -6,6 +6,7 @@ require __DIR__ . '/../src/bootstrap.php';
 use App\Router;
 use App\Controllers\AuthController;
 use App\Controllers\TicketController;
+use App\Controllers\AdminController;
 
 //require_once __DIR__ . '/../src/Router.php';
 
@@ -26,5 +27,12 @@ $router->post('/tickets/(?P<id>\\d+)/comment', [TicketController::class, 'commen
 $router->post('/tickets/(?P<id>\\d+)/status', [TicketController::class, 'updateStatus']);
 $router->post('/tickets/(?P<id>\\d+)/assign', [TicketController::class, 'assign']);
 $router->post('/tickets/(?P<id>\\d+)/attach', [TicketController::class, 'attach']);
+
+// Admin routes
+$router->get('/admin', [AdminController::class, 'index']);
+$router->get('/admin/tickets', [AdminController::class, 'index']);
+// Admin user management
+$router->get('/admin/users', [AdminController::class, 'users']);
+$router->post('/admin/users/(?P<id>\\d+)/role', [AdminController::class, 'updateUserRole']);
 
 $router->dispatch();

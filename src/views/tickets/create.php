@@ -39,7 +39,14 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="category" class="form-label fw-bold">Category</label>
-                            <input type="text" id="category" name="category" class="form-control" placeholder="e.g., Hardware, Network">
+                            <select id="category" name="category" class="form-select">
+                                <option value="">— Select a category —</option>
+                                <option value="Hardware">Hardware</option>
+                                <option value="Software">Software</option>
+                                <option value="Network">Network</option>
+                                <option value="Access">Access</option>
+                                <option value="Other">Other</option>
+                            </select>
                         </div>
                     </div>
 
